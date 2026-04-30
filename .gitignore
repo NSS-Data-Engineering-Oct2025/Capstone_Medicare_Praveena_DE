@@ -216,3 +216,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+*.duckdb
+*.log
+logs/
+.DS_Store
+*.lock
+data/
+*.db
+plugins/
