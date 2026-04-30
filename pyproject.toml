@@ -1,0 +1,30 @@
+[project]
+name = "capstone-medicare-praveena-de"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "apache-airflow>=3.2.1",
+    "boto3>=1.43.0",
+    "dbt-duckdb>=1.10.1",
+    "duckdb>=1.5.2",
+    "fastapi>=0.136.1",
+    "loguru>=0.7.3",
+    "pandas>=3.0.2",
+    "pendulum>=3.2.0",
+    "pyarrow>=24.0.0",
+    "pydantic-settings>=2.14.0",
+    "python-dotenv>=1.2.2",
+    "requests>=2.33.1",
+    "uvicorn>=0.46.0",
+]
+[dependency-groups]
+dev = [
+    "ruff>=0.15.10",
+]
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "N", "UP", "B", "S", "SIM", "RUF", "T20"]
