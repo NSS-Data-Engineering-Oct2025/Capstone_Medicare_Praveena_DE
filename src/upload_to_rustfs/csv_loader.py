@@ -1,8 +1,8 @@
 import pandas as pd
 from datetime import date
 from loguru import logger
-from src.ingestion.config import settings
-from src.ingestion.utils import ensure_bucket_exists, upload_parquet_to_rustfs
+from src.config import settings
+from src.utils import ensure_bucket_exists, upload_parquet_to_rustfs
 
 
 # only load the columns we actually need

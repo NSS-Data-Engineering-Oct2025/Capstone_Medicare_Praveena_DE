@@ -3,7 +3,7 @@ import pandas as pd
 from io import BytesIO
 from loguru import logger
 from botocore.client import Config
-from src.ingestion.config import settings
+from src.config import settings
 
 
 def get_rustfs_client():
