@@ -10,8 +10,13 @@ dependencies = [
     "dbt-duckdb>=1.10.1",
     "duckdb>=1.5.2",
     "fastapi>=0.136.1",
+    "loguru>=0.7.3",
     "pandas>=3.0.2",
+    "pendulum>=3.2.0",
+    "pyarrow>=24.0.0",
+    "pydantic-settings>=2.14.0",
     "python-dotenv>=1.2.2",
+    "requests>=2.33.1",
     "uvicorn>=0.46.0",
 ]
 [dependency-groups]
