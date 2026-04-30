@@ -15,6 +15,9 @@ class Settings(BaseSettings):
 
     # NPI CSV
     npi_csv_path: str
+    
+    # DuckDB
+    duckdb_path: str
 
     class Config:
         env_file = ".env"
