@@ -19,6 +19,21 @@ class Settings(BaseSettings):
     # DuckDB
     duckdb_path: str
 
+    # DuckDB table names — inpatient
+    inpatient_final_table: str
+    inpatient_stage_table: str
+
+    # DuckDB table names — physician
+    physician_final_table: str
+    physician_stage_table: str
+
+    # DuckDB table names — NPI
+    npi_final_table: str
+    npi_stage_table: str
+    
+    
+    
+    
     class Config:
         env_file = ".env"
 
