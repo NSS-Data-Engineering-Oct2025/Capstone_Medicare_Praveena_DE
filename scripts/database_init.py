@@ -1,7 +1,7 @@
 """
 database_init.py — Run this ONCE before anything else.
 usage:
-    uv run python -m  scripts.database_init.py
+    uv run python -m  scripts.database_init
 """
 import duckdb
 from loguru import logger
