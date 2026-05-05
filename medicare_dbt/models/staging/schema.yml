@@ -1,0 +1,26 @@
+version: 2
+ 
+sources:
+  - name: raw
+    schema: raw
+    database: medicare
+    description: "Raw Medicare data loaded from RustFS Parquet files"
+    tables:
+      - name: inpatient_hospitals
+        description: "CMS inpatient hospital data — one row per hospital + DRG code"
+ 
+      - name: physician_data
+        description: "CMS physician data — one row per provider + HCPCS code + place of service"
+ 
+      - name: npi_data
+        description: "NPI weekly reference data — one row per provider"
+
+models:
+  - name: clean_inpatient_hospital
+    description: "Cleaned and renamed inpatient hospital data"
+
+  - name: clean_physician_data
+    description: "Cleaned and renamed physician data"
+
+  - name: clean_npi_data
+    description: "Cleaned and renamed NPI reference data"
