@@ -1,0 +1,8 @@
+version: 2
+ 
+models:
+  - name: mart_inpatient
+    description: "Analytics-ready inpatient hospital data. One row per hospital + DRG code combination."
+ 
+  - name: mart_physician
+    description: "Analytics-ready physician data enriched with NPI reference. One row per provider + HCPCS code + place of service."

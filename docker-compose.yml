@@ -21,6 +21,25 @@ services:
       retries: 3
     restart: unless-stopped
 
+  metabase:
+    build: 
+      context: ./metabase
+      dockerfile: dockerfile
+    container_name: medicare_metabase
+    ports:
+      - "3000:3000"
+    volumes:
+      - metabase_data:/metabase-data
+      # DuckDB needs write access for lock files
+      - ./medicare_dbt/medicare.duckdb:/duckdb/medicare.duckdb
+
+    environment:
+      MB_DB_TYPE: h2
+      MB_DB_FILE: /metabase-data/metabase.db
+    restart: unless-stopped
+
 volumes:
   rustfs_data:
+    driver: local
+  metabase_data:
     driver: local
