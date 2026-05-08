@@ -1,3 +1,5 @@
+import time
+import random
 import requests
 import pandas as pd
 from datetime import date
@@ -6,54 +8,63 @@ from src.config import settings
 from src.utils import ensure_bucket_exists, upload_parquet_to_rustfs
 
 
-def fetch_physician_data():
-    # build the API url using physician dataset id from .env
+def fetch_physician_data(max_retries=5, base_delay=1):
+    """Fetch physician data with pagination, exponential backoff and row limit."""
     url = f"{settings.cms_api_base_url}/{settings.cms_physician_dataset_id}/data"
-
-    all_data = []   # we will collect all rows here
-    offset = 0      # starting point
-    limit = 5000    # how many rows to fetch per request
-
-    logger.info("Starting to fetch physician data...")
-
+ 
+    all_data = []
+    offset = 0
+    limit = 5000
+    max_rows = settings.physician_max_rows
+ 
+    logger.info(f"Starting to fetch physician data (max {max_rows:,} rows)...")
+ 
     while True:
-        # add pagination params to the request
-        params = {
-            "size": limit,
-            "offset": offset
-        }
-
-        # hit the API
-        response = requests.get(url, params=params, timeout=60)
-
-        # if request failed, stop and show error
-        response.raise_for_status()
-
-        # convert response to list of rows
-        batch = response.json()
-
-        # if no rows came back, we are done
+        # stop if we reached the row limit
+        if len(all_data) >= max_rows:
+            logger.info(f"Reached max rows limit: {max_rows:,}. Stopping.")
+            break
+ 
+        for attempt in range(max_retries):
+            try:
+                response = requests.get(
+                    url,
+                    params={"size": limit, "offset": offset},
+                    timeout=60
+                )
+                response.raise_for_status()
+                batch = response.json()
+                break  # success — exit retry loop
+ 
+            except requests.exceptions.RequestException as e:
+                wait_time = base_delay * (2 ** attempt) + random.uniform(0, 1)
+                logger.warning(
+                    f"Attempt {attempt + 1} failed at offset {offset}: {e}. "
+                    f"Retrying in {wait_time:.2f}s..."
+                )
+                time.sleep(wait_time)
+        else:
+            # all retries failed
+            logger.error(f"Max retries exceeded for offset {offset}. Stopping.")
+            return pd.DataFrame()
+ 
         if not batch:
             logger.info("No more data to fetch.")
             break
-
-        # add this batch to our full list
+ 
         all_data.extend(batch)
-        logger.info(f"Fetched {len(all_data)} rows so far...")
-
-        # if batch is less than 5000, this was the last page
+        logger.info(f"Fetched {len(all_data):,} rows so far...")
+ 
         if len(batch) < limit:
             logger.info("Reached last page.")
             break
-
-        # move to next page
+ 
         offset = offset + limit
-
-    # convert full list to dataframe
+        time.sleep(1)  # avoid hitting API rate limits
+ 
     physician_data = pd.DataFrame(all_data)
-    logger.info(f"Finished fetching. Total rows: {len(physician_data)}")
+    logger.info(f"Finished fetching. Total rows: {len(physician_data):,}")
     logger.info(f"Columns in data: {list(physician_data.columns)}")
-
     return physician_data
 
 

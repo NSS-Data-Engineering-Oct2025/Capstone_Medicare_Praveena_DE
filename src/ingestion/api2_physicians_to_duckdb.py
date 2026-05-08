@@ -24,7 +24,7 @@ from io import BytesIO
 from loguru import logger
 from botocore.client import Config
 from src.config import settings
-
+from  src.utils import get_duckdb_path, get_rustfs_endpoint
 
 # table names
 FINAL_TABLE = settings.physician_final_table
@@ -41,7 +41,7 @@ def get_rustfs_client():
     # connect to RustFS using credentials from .env
     client = boto3.client(
         "s3",
-        endpoint_url=settings.rustfs_endpoint,
+        endpoint_url=get_rustfs_endpoint(),
         aws_access_key_id=settings.rustfs_access_key,
         aws_secret_access_key=settings.rustfs_secret_key,
         config=Config(signature_version="s3v4")
@@ -74,9 +74,9 @@ def read_parquet_from_rustfs(client, s3_key):
         Key=s3_key
     )
     buffer = BytesIO(response["Body"].read())
-    df = pd.read_parquet(buffer)
-    logger.info(f"Rows read from RustFS: {len(df):,}")
-    return df
+    dataset = pd.read_parquet(buffer)
+    logger.info(f"Rows read from RustFS: {len(dataset):,}")
+    return dataset
 
 
 def read_sql(file_path, **kwargs):
@@ -86,14 +86,14 @@ def read_sql(file_path, **kwargs):
     return sql.format(**kwargs)
 
 
-def load_in_chunks(con, df, stage_table, chunk_size):
+def load_in_chunks(con, dataset, stage_table, chunk_size):
     # physician dataset is ~9.6M rows — load in chunks to avoid memory issues
-    total_rows = len(df)
+    total_rows = len(dataset)
     loaded = 0
 
     for start in range(0, total_rows, chunk_size):
         # slice the dataframe into a chunk
-        chunk = df.iloc[start: start + chunk_size]
+        chunk = dataset.iloc[start: start + chunk_size]
 
         # insert chunk into staging table
         con.execute(f"INSERT INTO {stage_table} SELECT * FROM chunk;")
@@ -107,8 +107,9 @@ def main():
     logger.info("Starting physician ingestion → DuckDB")
 
     # step 1 - connect to DuckDB
-    con = duckdb.connect(settings.duckdb_path)
-    logger.info(f"Connected to DuckDB: {settings.duckdb_path}")
+    duckdb_path = get_duckdb_path()
+    con = duckdb.connect(duckdb_path)
+    logger.info(f"Connected to DuckDB: {duckdb_path}")
 
     # step 2 - read latest parquet from RustFS
     client = get_rustfs_client()
@@ -118,9 +119,9 @@ def main():
         logger.error("No Parquet file found. Stopping.")
         return
 
-    df = read_parquet_from_rustfs(client, s3_key)
+    dataset = read_parquet_from_rustfs(client, s3_key)
 
-    if df.empty:
+    if dataset.empty:
         logger.warning("DataFrame is empty. Stopping.")
         return
 
@@ -130,7 +131,7 @@ def main():
 
     # step 4 - load dataframe into staging in chunks
     # physician dataset is large so we chunk it
-    load_in_chunks(con, df, STAGE_TABLE, CHUNK_SIZE)
+    load_in_chunks(con, dataset, STAGE_TABLE, CHUNK_SIZE)
 
     # step 5 - run merge into final table
     merge_sql = read_sql(

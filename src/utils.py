@@ -4,13 +4,43 @@ from io import BytesIO
 from loguru import logger
 from botocore.client import Config
 from src.config import settings
+import os
 
+
+def is_docker():
+    """Check if running inside Docker container."""
+    return os.path.exists("/opt/airflow/workspace")
+
+
+def get_duckdb_path():
+    """Get correct DuckDB path based on environment."""
+    if is_docker():
+        return settings.airflow_duckdb_path
+    return settings.duckdb_path
+
+def get_rustfs_endpoint():
+    """Get correct RustFS endpoint based on environment."""
+    if is_docker():
+        return settings.airflow_rustfs_endpoint
+    return settings.rustfs_endpoint
+
+def get_npi_csv_path():
+    """Get correct NPI CSV path based on environment."""
+    if is_docker():
+        return settings.airflow_npi_csv_path
+    return settings.npi_csv_path
+
+def get_ducklake_catalog_path():
+    return settings.ducklake_catalog_path
+
+def get_ducklake_data_path():
+    return settings.ducklake_data_path
 
 def get_rustfs_client():
     # connect to RustFS using credentials from .env
     client = boto3.client(
         "s3",
-        endpoint_url=settings.rustfs_endpoint,
+        endpoint_url=get_rustfs_endpoint(),
         aws_access_key_id=settings.rustfs_access_key,
         aws_secret_access_key=settings.rustfs_secret_key,
         config=Config(signature_version="s3v4")
