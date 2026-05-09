@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     cms_api_base_url: str
     cms_inpatient_dataset_id: str
     cms_physician_dataset_id: str
+    
 
     # NPI CSV
     npi_csv_path: str

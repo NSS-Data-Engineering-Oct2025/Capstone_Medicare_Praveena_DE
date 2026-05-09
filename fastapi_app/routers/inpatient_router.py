@@ -2,7 +2,8 @@
 routers/inpatient.py — Inpatient hospital endpoints.
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
+import duckdb
 from fastapi_app.database import get_connection
 from fastapi_app.schemas.inpatient_schema import (
     InpatientStateSummary,
@@ -26,10 +27,9 @@ router = APIRouter(
     summary="Get inpatient summary for a state",
     description="Returns hospital count, discharge volume and average Medicare payment for a given state code (e.g. TX, CA, NY)"
 )
-def inpatient_by_state(state_code: str):
-    con = get_connection()
-    try:
-        result = con.execute("""
+def inpatient_by_state(state_code: str, con: duckdb.DuckDBPyConnection = Depends(get_connection)):
+
+    result = con.execute("""
             SELECT
                 provider_state                          AS state,
                 COUNT(DISTINCT provider_ccn)            AS total_hospitals,
@@ -43,13 +43,13 @@ def inpatient_by_state(state_code: str):
             GROUP BY provider_state
         """, [state_code.upper()]).fetchone()
 
-        if result is None:
+    if result is None:
             raise HTTPException(
                 status_code=404,
                 detail=f"No data found for state: {state_code.upper()}"
             )
 
-        return InpatientStateSummary(
+    return InpatientStateSummary(
             state=result[0],
             total_hospitals=result[1],
             total_discharges=result[2],
@@ -58,8 +58,7 @@ def inpatient_by_state(state_code: str):
             avg_payment_gap=result[5],
             avg_medicare_coverage_pct=result[6]
         )
-    finally:
-        con.close()
+
 
 
 @router.get(
@@ -68,10 +67,9 @@ def inpatient_by_state(state_code: str):
     summary="Get top DRG codes by total discharges",
     description="Returns the most common hospital procedures ranked by discharge volume. Default limit is 10."
 )
-def top_drg(limit: int = 10):
-    con = get_connection()
-    try:
-        results = con.execute("""
+def top_drg(limit: int = 10, con: duckdb.DuckDBPyConnection = Depends(get_connection)):
+
+    results = con.execute("""
             SELECT
                 drg_code,
                 drg_desc,
@@ -83,7 +81,7 @@ def top_drg(limit: int = 10):
             LIMIT ?
         """, [limit]).fetchall()
 
-        return [
+    return [
             DRGSummary(
                 drg_code=row[0],
                 drg_desc=row[1],
@@ -91,8 +89,6 @@ def top_drg(limit: int = 10):
             )
             for row in results
         ]
-    finally:
-        con.close()
 
 
 @router.get(
@@ -101,9 +97,8 @@ def top_drg(limit: int = 10):
     summary="Get average payment gap by state",
     description="Returns the difference between submitted charges and Medicare payments per state, sorted highest to lowest."
 )
-def payment_gap_by_state():
-    con = get_connection()
-    try:
+def payment_gap_by_state(con: duckdb.DuckDBPyConnection = Depends(get_connection)):
+
         results = con.execute("""
             SELECT
                 provider_state,
@@ -121,8 +116,7 @@ def payment_gap_by_state():
             )
             for row in results
         ]
-    finally:
-        con.close()
+
 
 
 @router.get(
@@ -131,9 +125,9 @@ def payment_gap_by_state():
     summary="Compare urban vs rural hospital Medicare payments",
     description="Returns average Medicare payment grouped by RUCA urban/rural classification."
 )
-def urban_vs_rural():
-    con = get_connection()
-    try:
+def urban_vs_rural(con: duckdb.DuckDBPyConnection = Depends(get_connection)):
+
+
         results = con.execute("""
             SELECT
                 provider_ruca_desc,
@@ -151,5 +145,3 @@ def urban_vs_rural():
             )
             for row in results
         ]
-    finally:
-        con.close()

@@ -92,8 +92,8 @@ def main():
     con.execute(f"""
         ATTACH 'ducklake:{catalog_path}' AS lake (
             DATA_PATH '{data_path}',
-            DATA_INLINING_ROW_LIMIT 0,
-            OVERRIDE_DATA_PATH TRUE
+            DATA_INLINING_ROW_LIMIT 0
+            
         );
     """)
     con.execute("USE lake;")

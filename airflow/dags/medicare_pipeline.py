@@ -17,17 +17,18 @@ Schedule: Weekly on Sunday at midnight UTC
 
 import pendulum
 from airflow.sdk import dag, task
+from  datetime import timedelta
 
 
 #  Upload to RustFS tasks 
 
-@task
+@task(execution_timeout=timedelta(hours=6))
 def upload_inpatient():
     from src.upload_to_rustfs.api1_inpatient_data import run
     run()
 
 
-@task
+@task(execution_timeout=timedelta(hours=6))
 def upload_physician():
     from src.upload_to_rustfs.api2_physician_data import run
     run()
