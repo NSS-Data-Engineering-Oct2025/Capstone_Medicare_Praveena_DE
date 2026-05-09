@@ -1,4 +1,4 @@
-# Medicare Claims Analytics Pipeline — Praveena Venkatesan
+# Medicare Physicians and Inpatient Analytics Pipeline 
 
 ## Project Overview
 
