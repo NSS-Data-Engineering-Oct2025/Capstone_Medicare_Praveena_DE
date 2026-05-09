@@ -8,4 +8,5 @@ RUN pip install --no-cache-dir \
     pydantic-settings \
     pandas \
     pyarrow \
+    polars \
     requests

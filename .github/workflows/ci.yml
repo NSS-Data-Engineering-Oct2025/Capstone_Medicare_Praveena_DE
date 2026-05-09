@@ -23,15 +23,15 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pytest duckdb loguru pydantic-settings requests pandas boto3
+          pip install pytest duckdb loguru pydantic-settings requests pandas polars boto3
 
       - name: Run tests
         run: pytest tests/ -v
         env:
           DUCKLAKE_CATALOG_PATH: /tmp/test_catalog.ducklake
           DUCKLAKE_DATA_PATH: /tmp/test_lake_data
-          RUSTFS_ENDPOINT: http://localhost:9000
-          AIRFLOW_RUSTFS_ENDPOINT: http://localhost:9000
+          RUSTFS_ENDPOINT: http://fake:0000
+          AIRFLOW_RUSTFS_ENDPOINT: http://fake:0000
           RUSTFS_ACCESS_KEY: test_access_key
           RUSTFS_SECRET_KEY: test_secret_key
           RUSTFS_BUCKET: test_bucket
