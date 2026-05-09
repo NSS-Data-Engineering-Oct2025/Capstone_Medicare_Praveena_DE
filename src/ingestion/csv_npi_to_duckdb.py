@@ -23,6 +23,7 @@ from io import BytesIO
 from loguru import logger
 from botocore.client import Config
 from src.config import settings
+from src.utils import get_duckdb_path, get_rustfs_endpoint
 
 
 # table names
@@ -37,7 +38,7 @@ def get_rustfs_client():
     # connect to RustFS using credentials from .env
     client = boto3.client(
         "s3",
-        endpoint_url=settings.rustfs_endpoint,
+        endpoint_url=get_rustfs_endpoint(),
         aws_access_key_id=settings.rustfs_access_key,
         aws_secret_access_key=settings.rustfs_secret_key,
         config=Config(signature_version="s3v4")
@@ -70,9 +71,9 @@ def read_parquet_from_rustfs(client, s3_key):
         Key=s3_key
     )
     buffer = BytesIO(response["Body"].read())
-    df = pd.read_parquet(buffer)
-    logger.info(f"Rows read from RustFS: {len(df):,}")
-    return df
+    npi_data = pd.read_parquet(buffer)
+    logger.info(f"Rows read from RustFS: {len(npi_data):,}")
+    return npi_data
 
 
 def read_sql(file_path, **kwargs):
@@ -86,8 +87,9 @@ def main():
     logger.info("Starting NPI ingestion → DuckDB")
 
     # step 1 - connect to DuckDB
-    con = duckdb.connect(settings.duckdb_path)
-    logger.info(f"Connected to DuckDB: {settings.duckdb_path}")
+    duckdb_path = get_duckdb_path()
+    con = duckdb.connect(duckdb_path)
+    logger.info(f"Connected to DuckDB: {duckdb_path}")
 
     # step 2 - read latest parquet from RustFS
     client = get_rustfs_client()
@@ -97,9 +99,9 @@ def main():
         logger.error("No Parquet file found. Stopping.")
         return
 
-    df = read_parquet_from_rustfs(client, s3_key)
+    npi_data = read_parquet_from_rustfs(client, s3_key)
 
-    if df.empty:
+    if npi_data.empty:
         logger.warning("DataFrame is empty. Stopping.")
         return
 
@@ -109,7 +111,7 @@ def main():
 
     # step 4 - load dataframe into staging table
     # DuckDB can read pandas dataframes directly
-    con.execute(f"INSERT INTO {STAGE_TABLE} SELECT * FROM df;")
+    con.execute(f"INSERT INTO {STAGE_TABLE} SELECT * FROM npi_data;")
     stage_count = con.execute(f"SELECT COUNT(*) FROM {STAGE_TABLE}").fetchone()[0]
     logger.info(f"Rows loaded into staging: {stage_count:,}")
 

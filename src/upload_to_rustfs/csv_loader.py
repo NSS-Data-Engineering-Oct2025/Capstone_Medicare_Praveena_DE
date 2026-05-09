@@ -2,7 +2,7 @@ import pandas as pd
 from datetime import date
 from loguru import logger
 from src.config import settings
-from src.utils import ensure_bucket_exists, upload_parquet_to_rustfs
+from src.utils import ensure_bucket_exists, upload_parquet_to_rustfs, get_npi_csv_path
 
 
 # only load the columns we actually need
@@ -36,7 +36,7 @@ USEFUL_COLUMNS = [
 
 def load_npi_csv():
     # get csv path from .env via config
-    csv_path = settings.npi_csv_path
+    csv_path = get_npi_csv_path()
 
     logger.info(f"Reading NPI CSV from {csv_path}...")
 

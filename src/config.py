@@ -4,6 +4,7 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     # RustFS settings
     rustfs_endpoint: str
+    airflow_rustfs_endpoint: str
     rustfs_access_key: str
     rustfs_secret_key: str
     rustfs_bucket: str
@@ -15,9 +16,11 @@ class Settings(BaseSettings):
 
     # NPI CSV
     npi_csv_path: str
+    airflow_npi_csv_path: str
     
     # DuckDB
     duckdb_path: str
+    airflow_duckdb_path: str
 
     # DuckDB table names — inpatient
     inpatient_final_table: str
@@ -31,9 +34,13 @@ class Settings(BaseSettings):
     npi_final_table: str
     npi_stage_table: str
     
+    # Ducklake local paths
+    ducklake_catalog_path: str
+    ducklake_data_path: str
     
-    
-    
+
+    # Physician API row limit
+    physician_max_rows: int = 500000
     class Config:
         env_file = ".env"
 
