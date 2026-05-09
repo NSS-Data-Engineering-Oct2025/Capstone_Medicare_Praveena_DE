@@ -1,21 +1,20 @@
 """
 api2_physicians_to_duckdb.py
 
-Reads physician Parquet from RustFS and loads into DuckDB raw schema.
-Physician dataset is large (~9.6M rows) so we load it in chunks.
+Reads physician Parquet files from RustFS and loads into DuckDB raw schema.
+Handles multiple part files efficiently — reads one part at a time into staging.
 
 Steps:
     1. Connect to DuckDB
-    2. Read latest Parquet from RustFS into a DataFrame
+    2. Get latest date folder from RustFS
     3. Truncate staging table
-    4. Load DataFrame into staging table in chunks
-    5. Run MERGE into final table
+    4. Loop through each part file → insert into staging
+    5. Run MERGE staging → final table
     6. Log row counts
 
 Usage:
     uv run python -m src.ingestion.api2_physicians_to_duckdb
 """
-
 import os
 import duckdb
 import boto3
@@ -24,21 +23,17 @@ from io import BytesIO
 from loguru import logger
 from botocore.client import Config
 from src.config import settings
-from  src.utils import get_duckdb_path, get_rustfs_endpoint
+from src.utils import get_duckdb_path, get_rustfs_endpoint
 
 # table names
 FINAL_TABLE = settings.physician_final_table
 STAGE_TABLE = settings.physician_stage_table
-
-# chunk size for loading large dataset — 500k rows at a time
-CHUNK_SIZE = 500_000
 
 # sql file path
 SQL_PATH = os.path.join(os.path.dirname(__file__), "..", "sql", "ingest_physicians.sql")
 
 
 def get_rustfs_client():
-    # connect to RustFS using credentials from .env
     client = boto3.client(
         "s3",
         endpoint_url=get_rustfs_endpoint(),
@@ -49,58 +44,61 @@ def get_rustfs_client():
     return client
 
 
-def get_latest_parquet_key(client, prefix):
-    # list all files under this prefix and return the most recent one
+def get_latest_prefix(client, base_prefix):
+    """Get the most recently modified date folder from RustFS."""
+    response = client.list_objects_v2(
+        Bucket=settings.rustfs_bucket,
+        Prefix=base_prefix
+    )
+
+    if "Contents" not in response:
+        logger.error(f"No files found under: {base_prefix}")
+        return None
+
+    # filter only parquet files
+    parquet_files = [
+        obj for obj in response["Contents"]
+        if obj["Key"].endswith(".parquet")
+    ]
+
+    if not parquet_files:
+        logger.error("No parquet files found.")
+        return None
+
+    # get most recently modified file's folder
+    latest = max(parquet_files, key=lambda x: x["LastModified"])
+
+    # extract date folder
+    # e.g. "physician/2026-05-09/part_0.parquet" → "physician/2026-05-09/"
+    prefix = "/".join(latest["Key"].split("/")[:2]) + "/"
+    logger.info(f"Latest date folder: {prefix}")
+    return prefix
+
+
+def get_parquet_files(client, prefix):
+    """List all parquet part files under a prefix, sorted by name."""
     response = client.list_objects_v2(
         Bucket=settings.rustfs_bucket,
         Prefix=prefix
     )
 
     if "Contents" not in response:
-        logger.error(f"No files found in RustFS under prefix: {prefix}")
-        return None
+        logger.error(f"No files found under: {prefix}")
+        return []
 
-    # sort by last modified and pick the latest
-    files = sorted(response["Contents"], key=lambda x: x["LastModified"], reverse=True)
-    latest_key = files[0]["Key"]
-    logger.info(f"Latest Parquet found: {latest_key}")
-    return latest_key
+    parquet_files = sorted([
+        obj["Key"] for obj in response["Contents"]
+        if obj["Key"].endswith(".parquet")
+    ])
 
-
-def read_parquet_from_rustfs(client, s3_key):
-    # download parquet file into memory and load as dataframe
-    response = client.get_object(
-        Bucket=settings.rustfs_bucket,
-        Key=s3_key
-    )
-    buffer = BytesIO(response["Body"].read())
-    dataset = pd.read_parquet(buffer)
-    logger.info(f"Rows read from RustFS: {len(dataset):,}")
-    return dataset
+    logger.info(f"Found {len(parquet_files)} parquet files to load.")
+    return parquet_files
 
 
 def read_sql(file_path, **kwargs):
-    # read sql file and fill in the table name placeholders
     with open(file_path, "r") as f:
         sql = f.read()
     return sql.format(**kwargs)
-
-
-def load_in_chunks(con, dataset, stage_table, chunk_size):
-    # physician dataset is ~9.6M rows — load in chunks to avoid memory issues
-    total_rows = len(dataset)
-    loaded = 0
-
-    for start in range(0, total_rows, chunk_size):
-        # slice the dataframe into a chunk
-        chunk = dataset.iloc[start: start + chunk_size]
-
-        # insert chunk into staging table
-        con.execute(f"INSERT INTO {stage_table} SELECT * FROM chunk;")
-        loaded += len(chunk)
-        logger.info(f"Loaded {loaded:,} / {total_rows:,} rows into staging...")
-
-    logger.info(f"All chunks loaded. Total rows in staging: {loaded:,}")
 
 
 def main():
@@ -111,29 +109,42 @@ def main():
     con = duckdb.connect(duckdb_path)
     logger.info(f"Connected to DuckDB: {duckdb_path}")
 
-    # step 2 - read latest parquet from RustFS
+    # step 2 - get latest date folder from RustFS
     client = get_rustfs_client()
-    s3_key = get_latest_parquet_key(client, "physician/")
+    prefix = get_latest_prefix(client, "physician/")
 
-    if s3_key is None:
-        logger.error("No Parquet file found. Stopping.")
+    if prefix is None:
+        logger.error("No prefix found. Stopping.")
         return
 
-    dataset = read_parquet_from_rustfs(client, s3_key)
+    # get all part files under that prefix
+    parquet_files = get_parquet_files(client, prefix)
 
-    if dataset.empty:
-        logger.warning("DataFrame is empty. Stopping.")
+    if not parquet_files:
+        logger.error("No parquet files found. Stopping.")
         return
 
-    # step 3 - truncate staging table
+    # step 3 - truncate staging ONCE before loading
     con.execute(f"TRUNCATE TABLE {STAGE_TABLE};")
     logger.info(f"Truncated: {STAGE_TABLE}")
 
-    # step 4 - load dataframe into staging in chunks
-    # physician dataset is large so we chunk it
-    load_in_chunks(con, dataset, STAGE_TABLE, CHUNK_SIZE)
+    # step 4 - insert each part file into staging one at a time
 
-    # step 5 - run merge into final table
+    total_loaded = 0
+    for key in parquet_files:
+        response = client.get_object(
+            Bucket=settings.rustfs_bucket,
+            Key=key
+        )
+        buffer = BytesIO(response["Body"].read())
+        chunk = pd.read_parquet(buffer)
+        con.execute(f"INSERT INTO {STAGE_TABLE} SELECT * FROM chunk;")
+        total_loaded += len(chunk)
+        logger.info(f"Loaded {key} → {len(chunk):,} rows | Total: {total_loaded:,}")
+
+    logger.info(f"All parts loaded into staging. Total rows: {total_loaded:,}")
+
+    # step 5 - run MERGE staging → final table
     merge_sql = read_sql(
         SQL_PATH,
         FINAL_TABLE=FINAL_TABLE,

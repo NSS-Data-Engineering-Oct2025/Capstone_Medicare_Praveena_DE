@@ -38,6 +38,7 @@ jobs:
           CMS_API_BASE_URL: https://fake-api.cms.gov
           CMS_INPATIENT_DATASET_ID: fake_inpatient_id
           CMS_PHYSICIAN_DATASET_ID: fake_physician_id
+
           NPI_CSV_PATH: /tmp/npi.csv
           AIRFLOW_NPI_CSV_PATH: /tmp/npi.csv
           DUCKDB_PATH: /tmp/test.duckdb

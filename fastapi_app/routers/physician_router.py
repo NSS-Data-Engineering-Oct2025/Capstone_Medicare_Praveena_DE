@@ -3,7 +3,8 @@ routers/physician.py — Physician analytics endpoints.
 
 """
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
+import duckdb
 from fastapi_app.database import get_connection
 from fastapi_app.schemas.physician_schema import (
     PhysicianStateSummary,
@@ -27,9 +28,9 @@ router = APIRouter(
     summary="Get physician billing summary for a state",
     description="Returns provider count, total services, beneficiaries and average Medicare payment for a given state code (e.g. TX, CA, NY)"
 )
-def physician_by_state(state_code: str):
-    con = get_connection()
-    try:
+def physician_by_state(state_code: str, con: duckdb.DuckDBPyConnection = Depends(get_connection)):
+
+
         result = con.execute("""
             SELECT
                 provider_state                              AS state,
@@ -61,8 +62,7 @@ def physician_by_state(state_code: str):
             avg_payment_gap=result[6],
             avg_medicare_coverage_pct=result[7]
         )
-    finally:
-        con.close()
+
 
 
 @router.get(
@@ -83,10 +83,11 @@ def physician_by_state(state_code: str):
 def specialties(
     state: str = Query(None, description="2-letter state code e.g. CA, TX, NY"),
     specialty: str = Query(None, description="Provider specialty type e.g. Cardiology"),
-    limit: int = Query(15, description="Number of results", le=100)
+    limit: int = Query(15, description="Number of results", le=100),
+    con: duckdb.DuckDBPyConnection = Depends(get_connection)
 ):
-    con = get_connection()
-    try:
+
+
         # build filters dynamically
         filters = ["provider_type IS NOT NULL"]
         params = []
@@ -137,8 +138,7 @@ def specialties(
             )
             for row in results
         ]
-    finally:
-        con.close()
+
 
 
 @router.get(
@@ -155,9 +155,8 @@ def specialties(
     - /api/v1/physician/drug-vs-nondrug?state=CA → California breakdown
     """
 )
-def drug_vs_nondrug(state: str = None):
-    con = get_connection()
-    try:
+def drug_vs_nondrug(state: str = None, con: duckdb.DuckDBPyConnection = Depends(get_connection)):
+
         # build WHERE clause based on whether state is provided
         if state:
             where_clause = "WHERE hcpcs_drug_indicator IS NOT NULL AND provider_state = ?"
@@ -193,8 +192,7 @@ def drug_vs_nondrug(state: str = None):
             )
             for row in results
         ]
-    finally:
-        con.close()
+
 
 
 
@@ -215,10 +213,10 @@ def drug_vs_nondrug(state: str = None):
 def list_physicians(
     state: str = Query(..., description="2-letter state code", example="CA"),
     limit: int = Query(50, description="Number of results per page", le=100),
-    offset: int = Query(0, description="Starting position for pagination")
+    offset: int = Query(0, description="Starting position for pagination"),
+    con: duckdb.DuckDBPyConnection = Depends(get_connection)
 ):
-    con = get_connection()
-    try:
+
         results = con.execute("""
             SELECT
                 npi,
@@ -264,5 +262,3 @@ def list_physicians(
             )
             for row in results
         ]
-    finally:
-        con.close()

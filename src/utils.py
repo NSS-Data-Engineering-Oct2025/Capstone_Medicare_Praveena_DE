@@ -66,10 +66,12 @@ def ensure_bucket_exists():
 def upload_parquet_to_rustfs(data, s3_key):
     # convert dataframe to parquet and upload to RustFS
     client = get_rustfs_client()
-
-    # write dataframe to a memory buffer as parquet
     buffer = BytesIO()
-    data.to_parquet(buffer, index=False)
+    if hasattr(data,'write_parquet'):
+
+        data.write_parquet(buffer)
+    else:
+        data.to_parquet(buffer)
     buffer.seek(0)
 
     # upload the buffer to RustFS

@@ -15,6 +15,7 @@ Usage:
     uv run python -m src.ingestion.api1_inpatient_to_duckdb
 """
 
+from datetime import date
 import os
 import duckdb
 import boto3
@@ -35,7 +36,6 @@ SQL_PATH = os.path.join(os.path.dirname(__file__), "..", "sql", "ingest_inpatien
 
 
 def get_rustfs_client():
-    # connect to RustFS using credentials from .env
     client = boto3.client(
         "s3",
         endpoint_url=get_rustfs_endpoint(),
@@ -46,76 +46,103 @@ def get_rustfs_client():
     return client
 
 
-def get_latest_parquet_key(client, prefix):
-    # list all files under this prefix and return the most recent one
+def get_latest_prefix(client, base_prefix):
+    """Get the most recently modified date folder from RustFS."""
+    response = client.list_objects_v2(
+        Bucket=settings.rustfs_bucket,
+        Prefix=base_prefix
+    )
+
+    if "Contents" not in response:
+        logger.error(f"No files found under: {base_prefix}")
+        return None
+
+    # filter only parquet files
+    parquet_files = [
+        obj for obj in response["Contents"]
+        if obj["Key"].endswith(".parquet")
+    ]
+
+    if not parquet_files:
+        logger.error("No parquet files found.")
+        return None
+
+    # get most recently modified file's folder
+    latest = max(parquet_files, key=lambda x: x["LastModified"])
+
+    # extract date folder
+    # e.g. "inpatient/2026-05-09/part_0.parquet" → "inpatient/2026-05-09/"
+    prefix = "/".join(latest["Key"].split("/")[:2]) + "/"
+    logger.info(f"Latest date folder: {prefix}")
+    return prefix
+
+def get_parquet_files(client, prefix):
+    """List all parquet part files under a prefix, sorted by name."""
     response = client.list_objects_v2(
         Bucket=settings.rustfs_bucket,
         Prefix=prefix
     )
 
     if "Contents" not in response:
-        logger.error(f"No files found in RustFS under prefix: {prefix}")
-        return None
+        logger.error(f"No files found under: {prefix}")
+        return []
 
-    # sort by last modified and pick the latest
-    files = sorted(response["Contents"], key=lambda x: x["LastModified"], reverse=True)
-    latest_key = files[0]["Key"]
-    logger.info(f"Latest Parquet found: {latest_key}")
-    return latest_key
+    parquet_files = sorted([
+        obj["Key"] for obj in response["Contents"]
+        if obj["Key"].endswith(".parquet")
+    ])
 
-
-def read_parquet_from_rustfs(client, s3_key):
-    # download parquet file into memory and load as dataframe
-    response = client.get_object(
-        Bucket=settings.rustfs_bucket,
-        Key=s3_key
-    )
-    buffer = BytesIO(response["Body"].read())
-    dataset = pd.read_parquet(buffer)
-    logger.info(f"Rows read from RustFS: {len(dataset)}")
-    return dataset
+    logger.info(f"Found {len(parquet_files)} parquet files to load.")
+    return parquet_files
 
 
 def read_sql(file_path, **kwargs):
-    # read sql file and fill in the table name placeholders
     with open(file_path, "r") as f:
         sql = f.read()
     return sql.format(**kwargs)
 
-
 def main():
     logger.info("Starting inpatient ingestion → DuckDB")
-
     # step 1 - connect to DuckDB
     duckdb_path = get_duckdb_path()
     con = duckdb.connect(duckdb_path)
     logger.info(f"Connected to DuckDB: {duckdb_path}")
 
-    # step 2 - read latest parquet from RustFS
+    # step 2 - get latest date folder from RustFS
     client = get_rustfs_client()
-    s3_key = get_latest_parquet_key(client, "inpatient/")
+    prefix = get_latest_prefix(client, "inpatient/")
 
-    if s3_key is None:
-        logger.error("No Parquet file found. Stopping.")
+    if prefix is None:
+        logger.error("No prefix found. Stopping.")
         return
 
-    dataset = read_parquet_from_rustfs(client, s3_key)
+    # get all part files under that prefix
+    parquet_files = get_parquet_files(client, prefix)
 
-    if dataset.empty:
-        logger.warning("DataFrame is empty. Stopping.")
+    if not parquet_files:
+        logger.error("No parquet files found. Stopping.")
         return
-
-    # step 3 - truncate staging table
+    # step 3 - truncate staging ONCE before loading
     con.execute(f"TRUNCATE TABLE {STAGE_TABLE};")
     logger.info(f"Truncated: {STAGE_TABLE}")
 
-    # step 4 - load dataframe into staging table
-    # DuckDB can read pandas dataframes directly
-    con.execute(f"INSERT INTO {STAGE_TABLE} SELECT * FROM dataset;")
-    stage_count = con.execute(f"SELECT COUNT(*) FROM {STAGE_TABLE}").fetchone()[0]
-    logger.info(f"Rows loaded into staging: {stage_count:,}")
+    # step 4 - insert each part file into staging one at a time
 
-    # step 5 - run merge into final table
+    total_loaded = 0
+    for key in parquet_files:
+        response = client.get_object(
+            Bucket=settings.rustfs_bucket,
+            Key=key
+        )
+        buffer = BytesIO(response["Body"].read())
+        chunk = pd.read_parquet(buffer)
+        con.execute(f"INSERT INTO {STAGE_TABLE} SELECT * FROM chunk;")
+        total_loaded += len(chunk)
+        logger.info(f"Loaded {key} → {len(chunk):,} rows | Total: {total_loaded:,}")
+
+    logger.info(f"All parts loaded into staging. Total rows: {total_loaded:,}")
+
+    # step 5 - run MERGE staging → final table
     merge_sql = read_sql(
         SQL_PATH,
         FINAL_TABLE=FINAL_TABLE,

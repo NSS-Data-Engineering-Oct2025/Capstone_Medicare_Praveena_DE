@@ -1,7 +1,7 @@
 import time
 import random
 import requests
-import pandas as pd
+import polars as pl
 from datetime import date
 from loguru import logger
 from src.config import settings
@@ -9,22 +9,32 @@ from src.utils import ensure_bucket_exists, upload_parquet_to_rustfs
 
 
 def fetch_physician_data(max_retries=5, base_delay=1):
-    """Fetch physician data with pagination, exponential backoff and row limit."""
+    """
+    Fetch physician data with:
+    - pagination (5000 rows/batch)
+    - exponential backoff retry
+    - chunked uploads every 100k rows using Polars
+    - max_rows limit
+    - no temp files needed — Polars handles memory efficiently
+    """
     url = f"{settings.cms_api_base_url}/{settings.cms_physician_dataset_id}/data"
- 
-    all_data = []
+    today = date.today()
+    max_rows = settings.physician_max_rows
+
+    chunk = []
+    chunk_number = 0
+    total_rows = 0
     offset = 0
     limit = 5000
-    max_rows = settings.physician_max_rows
- 
+
     logger.info(f"Starting to fetch physician data (max {max_rows:,} rows)...")
- 
+
     while True:
-        # stop if we reached the row limit
-        if len(all_data) >= max_rows:
+        # stop if max rows reached
+        if total_rows >= max_rows:
             logger.info(f"Reached max rows limit: {max_rows:,}. Stopping.")
             break
- 
+
         for attempt in range(max_retries):
             try:
                 response = requests.get(
@@ -34,8 +44,8 @@ def fetch_physician_data(max_retries=5, base_delay=1):
                 )
                 response.raise_for_status()
                 batch = response.json()
-                break  # success — exit retry loop
- 
+                break
+
             except requests.exceptions.RequestException as e:
                 wait_time = base_delay * (2 ** attempt) + random.uniform(0, 1)
                 logger.warning(
@@ -44,50 +54,64 @@ def fetch_physician_data(max_retries=5, base_delay=1):
                 )
                 time.sleep(wait_time)
         else:
-            # all retries failed
-            logger.error(f"Max retries exceeded for offset {offset}. Stopping.")
-            return pd.DataFrame()
- 
+            logger.error(f"Max retries exceeded at offset {offset}. Stopping.")
+            if chunk:
+                s3_key = f"physician/{today}/part_{chunk_number}.parquet"
+                upload_parquet_to_rustfs(pl.DataFrame(chunk), s3_key)
+                logger.info(f"Saved partial chunk {chunk_number} before stopping.")
+            return total_rows
+
         if not batch:
             logger.info("No more data to fetch.")
             break
- 
-        all_data.extend(batch)
-        logger.info(f"Fetched {len(all_data):,} rows so far...")
- 
+
+        chunk.extend(batch)
+        total_rows += len(batch)
+        offset += limit
+
+        logger.info(f"Fetched {total_rows:,} rows so far...")
+
+        # upload every 100k rows using Polars — memory efficient
+        if len(chunk) >= 100_000:
+            s3_key = f"physician/{today}/part_{chunk_number}.parquet"
+            upload_parquet_to_rustfs(pl.DataFrame(chunk), s3_key)
+            logger.success(
+                f"Uploaded chunk {chunk_number} ({len(chunk):,} rows) → {s3_key}"
+            )
+            chunk = []        # release memory immediately
+            chunk_number += 1
+
         if len(batch) < limit:
             logger.info("Reached last page.")
             break
- 
-        offset = offset + limit
-        time.sleep(1)  # avoid hitting API rate limits
- 
-    physician_data = pd.DataFrame(all_data)
-    logger.info(f"Finished fetching. Total rows: {len(physician_data):,}")
-    logger.info(f"Columns in data: {list(physician_data.columns)}")
-    return physician_data
+
+        time.sleep(1)
+
+    # upload remaining rows
+    if chunk:
+        s3_key = f"physician/{today}/part_{chunk_number}.parquet"
+        upload_parquet_to_rustfs(pl.DataFrame(chunk), s3_key)
+        logger.success(
+            f"Uploaded final chunk {chunk_number} ({len(chunk):,} rows) → {s3_key}"
+        )
+
+    logger.info(f"Finished fetching. Total rows: {total_rows:,}")
+    return total_rows
 
 
 def run():
     # step 1 - make sure bucket exists in RustFS
     ensure_bucket_exists()
 
-    # step 2 - fetch the data from API
-    physician_data = fetch_physician_data()
+    # step 2 - fetch and upload in chunks
+    total_rows = fetch_physician_data()
 
-    # step 3 - check if we got any data
-    if physician_data.empty:
+    # step 3 - validate we got data
+    if total_rows == 0:
         logger.warning("No data fetched. Stopping.")
         return
 
-    # step 4 - build the file path inside RustFS
-    # using today's date so each run saves separately
-    today = date.today()
-    s3_key = f"physician/{today}/physician_data.parquet"
-
-    # step 5 - upload to RustFS
-    upload_parquet_to_rustfs(physician_data, s3_key)
-    logger.success("Physician data ingestion done!")
+    logger.success(f"Physician data ingestion done! Total rows: {total_rows:,}")
 
 
 if __name__ == "__main__":

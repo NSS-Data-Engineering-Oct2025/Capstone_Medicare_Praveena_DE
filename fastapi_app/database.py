@@ -12,4 +12,8 @@ def get_connection() -> duckdb.DuckDBPyConnection:
 
     logger.debug(f"Opening DuckDB connection: {settings.duckdb_path}")
     con = duckdb.connect(settings.duckdb_path, read_only=True)
-    return con
+    try:
+        yield con        # FastAPI manages lifecycle
+    finally:
+        con.close()      # always closes after request finishes
+        logger.debug("DuckDB connection closed.")
