@@ -1,0 +1,79 @@
+services:
+
+  rustfs:
+    image: rustfs/rustfs:latest
+    container_name: medicare_rustfs
+    ports:
+      - "9000:9000"   # S3 API port
+      - "9001:9001"   # Web console port
+    environment:
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY}
+      RUSTFS_VOLUMES: /data
+      RUSTFS_ADDRESS: ":9000"
+      RUSTFS_CONSOLE_ENABLE: "true"
+    volumes:
+      - rustfs_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  metabase:
+    build:
+      context: ./metabase
+      dockerfile: Dockerfile
+    container_name: medicare_metabase
+    ports:
+      - "3000:3000"
+    environment:
+      MB_DB_TYPE: h2
+      MB_DB_FILE: /metabase-data/metabase.db
+    volumes:
+      - metabase_data:/metabase-data
+      # mount ducklake data folder so metabase can access gold tables
+      - ./data:/data
+    restart: unless-stopped
+  airflow:
+    build:
+      context: ./airflow
+      dockerfile: Dockerfile
+    container_name: medicare_airflow
+    command: standalone
+    ports:
+      - "8080:8080"   # Airflow web UI
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    env_file: .env
+    environment:
+      - AIRFLOW__CORE__LOAD_EXAMPLES=false
+      # tells Python where to find src/ modules inside the container
+      - PYTHONPATH=/opt/airflow/workspace
+      # dbt project path inside container
+      - DBT_PROJECT_DIR=/opt/airflow/workspace/medicare_dbt
+      # dbt profiles path inside container
+      - DBT_PROFILES_DIR=/opt/airflow/workspace/medicare_dbt
+    volumes:
+      # mount entire project into container
+      - .:/opt/airflow/workspace
+      # dags folder
+      - ./airflow/dags:/opt/airflow/dags
+      # logs folder
+      - ./airflow/logs:/opt/airflow/logs
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/api/v2/version"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+
+volumes:
+  rustfs_data:
+    driver: local
+  metabase_data:
+    driver: local

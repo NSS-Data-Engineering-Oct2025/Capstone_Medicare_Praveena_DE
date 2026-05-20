@@ -1,0 +1,12 @@
+FROM apache/airflow:latest
+
+RUN pip install --no-cache-dir \
+    boto3 \
+    duckdb \
+    dbt-duckdb \
+    loguru \
+    pydantic-settings \
+    pandas \
+    pyarrow \
+    polars \
+    requests
