@@ -32,11 +32,10 @@ The pipeline is built to:
 
 ## Pipeline Architecture
 
-```
+
 ![Archicture Design](images/Architecture-Design.png)
 
 
-```
 
 **Orchestration:** Apache Airflow DAG runs the full pipeline end-to-end
 
