@@ -125,16 +125,12 @@ def medicare_pipeline():
 
     # uploads run in sequencially
     inpatient_upload >> physician_upload >> npi_upload
-    #[inpatient_upload, physician_upload, npi_upload] >> inpatient_ingest
+
     # ingestion starts after all uploads complete, runs sequentially
     npi_upload >> inpatient_ingest
     inpatient_ingest >> physician_ingest
     physician_ingest >> npi_ingest
-###
-    # inpatient_ingest >> physician_ingest
-    # physician_ingest >> npi_ingest
-    # npi_ingest >> dbt
-###
+
     # dbt runs after all ingestion complete
     npi_ingest >> dbt
     # ducklake loads after dbt completes
