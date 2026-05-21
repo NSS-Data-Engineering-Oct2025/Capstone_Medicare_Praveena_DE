@@ -164,8 +164,54 @@ def main():
         USING inpatient_df AS source
         ON target.provider_ccn = source.provider_ccn
            AND target.drg_code = source.drg_code
-        WHEN MATCHED THEN UPDATE SET *
-        WHEN NOT MATCHED THEN INSERT *
+        WHEN MATCHED THEN UPDATE SET 
+            provider_name = source.provider_name,
+            provider_city = source.provider_city,
+            provider_state = source.provider_state,
+            provider_zip = source.provider_zip,
+            provider_ruca = source.provider_ruca,
+            provider_ruca_desc = source.provider_ruca_desc,
+            drg_desc = source.drg_desc,
+            total_discharges = source.total_discharges,
+            avg_submitted_charge = source.avg_submitted_charge,
+            avg_total_payment = source.avg_total_payment,
+            avg_medicare_payment = source.avg_medicare_payment,
+            payment_gap = source.payment_gap,
+            medicare_coverage_pct = source.medicare_coverage_pct
+                
+        WHEN NOT MATCHED THEN INSERT  (
+                provider_ccn,
+            provider_name,
+            provider_city,
+            provider_state,
+            provider_zip,
+            provider_ruca,
+            provider_ruca_desc,
+            drg_code,
+            drg_desc,
+            total_discharges,
+            avg_submitted_charge,
+            avg_total_payment,
+            avg_medicare_payment,
+            payment_gap,
+            medicare_coverage_pct
+        ) VALUES (
+            source.provider_ccn,
+            source.provider_name,
+            source.provider_city,
+            source.provider_state,
+            source.provider_zip,
+            source.provider_ruca,
+            source.provider_ruca_desc,
+            source.drg_code,
+            source.drg_desc,
+            source.total_discharges,
+            source.avg_submitted_charge,
+            source.avg_total_payment,
+            source.avg_medicare_payment,
+            source.payment_gap,
+            source.medicare_coverage_pct
+        );
     """)
     count = con.execute("SELECT COUNT(*) FROM gold_inpatient").fetchone()[0]
     logger.success(f"gold_inpatient merged — {count:,} rows")
@@ -177,8 +223,83 @@ def main():
         ON target.npi = source.npi
            AND target.hcpcs_code = source.hcpcs_code
            AND target.place_of_service = source.place_of_service
-        WHEN MATCHED THEN UPDATE SET *
-        WHEN NOT MATCHED THEN INSERT *
+        WHEN MATCHED THEN UPDATE SET 
+            provider_last_name = source.provider_last_name,
+            provider_first_name = source.provider_first_name,
+            provider_credentials = source.provider_credentials,
+            provider_type = source.provider_type,
+            medicare_participating = source.medicare_participating,
+            provider_sex = source.provider_sex,
+            taxonomy_code = source.taxonomy_code,           
+            provider_city = source.provider_city,
+            provider_state = source.provider_state,
+            provider_zip = source.provider_zip,
+            provider_country = source.provider_country,
+            provider_ruca = source.provider_ruca,
+            provider_ruca_desc = source.provider_ruca_desc,
+            hcpcs_desc = source.hcpcs_desc,
+            hcpcs_drug_indicator = source.hcpcs_drug_indicator,
+            total_beneficiaries = source.total_beneficiaries,
+            total_services = source.total_services,
+            avg_submitted_charge = source.avg_submitted_charge,
+            avg_medicare_allowed_amount = source.avg_medicare_allowed_amount,
+            avg_medicare_payment = source.avg_medicare_payment,
+            avg_medicare_standardized_amount = source.avg_medicare_standardized_amount,
+            payment_gap = source.payment_gap,
+            medicare_coverage_pct = source.medicare_coverage_pct
+                
+                 
+        WHEN NOT MATCHED THEN INSERT (
+                npi,
+            provider_last_name,
+            provider_first_name,
+            provider_credentials,
+            provider_type,
+            medicare_participating,
+            provider_sex,
+            taxonomy_code,
+            provider_city,
+            provider_state,
+            provider_zip,
+            provider_country,
+            provider_ruca,
+            provider_ruca_desc,
+            hcpcs_desc,
+            hcpcs_drug_indicator,
+            total_beneficiaries,
+            total_services,
+            avg_submitted_charge,
+            avg_medicare_allowed_amount,
+            avg_medicare_payment,
+            avg_medicare_standardized_amount,
+            payment_gap,
+            medicare_coverage_pct
+        ) VALUES (
+            source.npi,
+            source.provider_last_name,
+            source.provider_first_name, 
+            source.provider_credentials,
+            source.provider_type,
+            source.medicare_participating,
+            source.provider_sex,
+            source.taxonomy_code,
+            source.provider_city,
+            source.provider_state,
+            source.provider_zip,
+            source.provider_country,
+            source.provider_ruca,
+            source.provider_ruca_desc,
+            source.hcpcs_desc,
+            source.hcpcs_drug_indicator,
+            source.total_beneficiaries,
+            source.total_services,
+            source.avg_submitted_charge,
+            source.avg_medicare_allowed_amount,
+            source.avg_medicare_payment,
+            source.avg_medicare_standardized_amount,
+            source.payment_gap,
+            source.medicare_coverage_pct
+        );
     """)
     count = con.execute("SELECT COUNT(*) FROM gold_physician").fetchone()[0]
     logger.success(f"gold_physician merged — {count:,} rows")

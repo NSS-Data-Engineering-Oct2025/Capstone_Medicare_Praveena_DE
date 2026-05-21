@@ -32,28 +32,10 @@ The pipeline is built to:
 
 ## Pipeline Architecture
 
-```
-CMS Public API
-    |
-    v  Polars chunked ingestion (100k rows/batch, exponential backoff, rate limiting)
-    |
-RustFS — S3-Compatible Data Lake (parquet part files, date-partitioned)
-    |
-    v  Multi-part loader → staging → MERGE → final table
-    |
-DuckDB — Raw Schema
-    |
-    v  dbt models — column cleaning, type casting, derived metrics
-    |
-dbt Marts (mart_inpatient, mart_physician)
-    |
-    v  ducklake_loader.py — MERGE into gold tables
-    |
-DuckLake — Gold Layer (gold_inpatient, gold_physician)
-    |
-    |---> Metabase (Business dashboards)
-    |---> FastAPI  (REST API endpoints)
-```
+
+![Archicture Design](images/Architecture-Design.png)
+
+
 
 **Orchestration:** Apache Airflow DAG runs the full pipeline end-to-end
 
